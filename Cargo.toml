@@ -1,0 +1,9 @@
+[package]
+name = "packdir"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+zstd = "0.13"
+tar = "0.4"
