@@ -93,7 +93,7 @@ fn compress_folder(name: &str, directory: &PathBuf, destination: &PathBuf) -> Re
         .expect("Time went backwards")
         .as_secs();
 
-    let output_filename = format!("{}-{}.zstd", name, timestamp);
+    let output_filename = format!("{}-{}.packdir", name, timestamp);
     let output_path = destination.join(&output_filename);
 
     println!("Compressing '{}' to '{}'...", directory.display(), output_path.display());
