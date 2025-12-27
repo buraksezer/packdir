@@ -29,6 +29,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Parser)]
 #[command(name = "packdir")]
+#[command(version)]
 #[command(about = "A CLI tool to compress directories using zstd", long_about = None)]
 struct Cli {
     #[command(subcommand)]
