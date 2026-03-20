@@ -23,8 +23,8 @@
 
 use clap::{Parser, Subcommand};
 use std::fs::File;
-use std::io::{BufReader, BufWriter};
-use std::path::PathBuf;
+use std::io::{BufReader, BufWriter, Write};
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Parser)]
@@ -46,6 +46,9 @@ enum Commands {
         directory: PathBuf,
         /// Destination directory for the compressed file
         destination: PathBuf,
+        /// Exclude directories or files from the archive
+        #[arg(long)]
+        exclude: Vec<String>,
     },
     /// Decompress a zstd archive
     Decompress {
@@ -60,8 +63,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Compress { name, directory, destination } => {
-            compress_folder(&name, &directory, &destination)?;
+        Commands::Compress { name, directory, destination, exclude } => {
+            compress_folder(&name, &directory, &destination, &exclude)?;
         }
         Commands::Decompress { file, destination } => {
             decompress_archive(&file, &destination)?;
@@ -71,7 +74,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn compress_folder(name: &str, directory: &PathBuf, destination: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+fn compress_folder(name: &str, directory: &PathBuf, destination: &PathBuf, exclude: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     if !directory.exists() {
         return Err(format!("Directory '{}' does not exist", directory.display()).into());
     }
@@ -108,12 +111,52 @@ fn compress_folder(name: &str, directory: &PathBuf, destination: &PathBuf) -> Re
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| "archive".to_string());
 
-    tar_builder.append_dir_all(&folder_name, directory)?;
+    let folder_name_path = PathBuf::from(&folder_name);
+    append_dir_filtered(&mut tar_builder, directory, &folder_name_path, &PathBuf::new(), exclude)?;
 
     let zstd_encoder = tar_builder.into_inner()?;
     zstd_encoder.finish()?;
 
     println!("Successfully created '{}'", output_path.display());
+
+    Ok(())
+}
+
+fn should_exclude(relative_path: &Path, exclude: &[String]) -> bool {
+    exclude.iter().any(|pattern| {
+        let pattern = pattern.strip_prefix("./").unwrap_or(pattern);
+        relative_path.starts_with(Path::new(pattern))
+    })
+}
+
+fn append_dir_filtered<W: Write>(
+    tar_builder: &mut tar::Builder<W>,
+    source_dir: &Path,
+    archive_prefix: &Path,
+    relative_prefix: &Path,
+    exclude: &[String],
+) -> Result<(), Box<dyn std::error::Error>> {
+    tar_builder.append_dir(archive_prefix, source_dir)?;
+
+    for entry in std::fs::read_dir(source_dir)? {
+        let entry = entry?;
+        let file_name = entry.file_name();
+        let relative_path = relative_prefix.join(&file_name);
+
+        if should_exclude(&relative_path, exclude) {
+            continue;
+        }
+
+        let archive_path = archive_prefix.join(&file_name);
+        let source_path = entry.path();
+        let file_type = entry.file_type()?;
+
+        if file_type.is_dir() {
+            append_dir_filtered(tar_builder, &source_path, &archive_path, &relative_path, exclude)?;
+        } else {
+            tar_builder.append_path_with_name(&source_path, &archive_path)?;
+        }
+    }
 
     Ok(())
 }
